@@ -1,0 +1,228 @@
+<html>
+  <head>
+    <title>聊天室</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.1/jquery.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.2/js/bootstrap.js"></script>
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.2.2/css/bootstrap.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/node-uuid/1.4.8/uuid.js"></script>
+  </head>
+  
+  <body>
+    <div class="container">
+      <div class="chat-container">
+
+      </div>
+      <div class="btn-groups">
+        <div class="col-lg-6">
+          <div class="btn btn-sm btn-primary", id="start-btn">链接</div>
+          <div class="btn btn-sm btn-warning", id="stop-btn">断开</div>
+        </div>
+        <div class="col-lg-6">
+          <div class="input-group">
+            <input type="text" class="form-control" placeholder="请在此输入...", id="send-msg">
+            <button class="btn btn-outline-secondary" type="button" id="send-btn">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <style>
+      .container {
+        display: flex;
+        flex-direction: column;
+
+        width: 100%;
+      }
+
+      .container .chat-container {
+        display: flex;
+        flex-direction: column;
+
+        width: 100%;
+        min-height: 500px;
+        margin: 0.3em 0 0.3em 0;
+
+        overflow: auto;
+        background-color: #f5f5f5;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        border-collapse: separate;
+      }
+
+      .container .chat-container .line {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+
+        border-radius: 5px;
+      }
+      .container .chat-container .line.warn {
+        background-color: pink;
+        border: 2px solid palevioletred;
+      }
+      .container .chat-container .line.info {
+        background-color: lightblue;
+        border: 2px solid lightskyblue;
+      }
+      .container .chat-container .line.new-message {
+        background-color: lightgoldenrodyellow;
+        border: 2px solid goldenrod;
+      }
+      .container .chat-container .line.success {
+        background-color: lightgreen;
+        border: 2px solid lightseagreen;
+      }
+      .container .chat-container .line.self {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+
+        border-radius: 5px;
+      }
+      .container .chat-container .msg {
+        font-size: 16px;
+      }
+      .container .chat-container .user {
+        font-size: 16px;
+      }
+
+      .btn-groups {
+        display: flex;
+        justify-content: space-between;
+
+        width: 100%;
+      }
+
+      .btn-groups .btn-controls {
+        width: 50%;
+      }
+    </style>
+    <script>
+      var room = {{.Room}};
+      if (room.length == 0) { room = "世界频道"; }
+      document.title = room;
+
+      var roomId = {{.Id}};
+      if (roomId.length == 0) { roomId = room; }
+      var curUuid = {{.UserName}}
+      if (curUuid.length == 0) { curUuid = window.uuid(); }
+
+      $(document).ready(function() {
+        appendMsg("<div>** 聊天室Demo</div><div>** 可以通过链接中的room指定房间名称</div><div>** 可以通过链接中的user指定用户名称</div><div>** e.g. http://localhost:8080/client?room=聊天室&user=Gopher</div>", "小助手", "info");
+        appendMsg("欢迎来到直播间, 请先链接...", "小助手", "info");
+      })
+
+      function generateMsg(msg, sender, type) {
+        var msg_div = "<div class='msg'>" + msg + "</div>";
+        var sender_div = "<div class='user'>用户(" + sender + "): </div>";
+
+        if (sender == curUuid) {
+          if (type == "info") { type = "success" }
+          return "<div class='line " + type + " self'>" + sender_div + msg_div + "</div>";
+        } else {
+          return "<div class='line " + type + "'>" + sender_div + msg_div + "</div>";
+        }
+      }
+
+      function appendMsg(msg, sender, type = "info") {
+        var msg = generateMsg(msg, sender, type);
+        
+        $(".container .chat-container").append(msg);
+      }
+
+      var websocket;
+      var linked = false;
+      $('#start-btn').on('click', function() {
+        if (linked) {
+          appendMsg("已连接, 无需重复操作", "小助手", "info");
+
+          return;
+        }
+        websocket = new WebSocket("ws://192.168.31.96:8080/ws?channelId=" + roomId + "&userId=" + curUuid);
+        websocket.onopen = function(e) {
+          appendMsg("已链接成功" + room + "，欢迎用户 " + curUuid, "小助手", "info");
+
+          linked = true;
+        };
+        websocket.onmessage = function(event) {
+          console.log(`[message] Data received from server: ${event.data}`);
+
+          data = JSON.parse(event.data);
+          if (data.userId != curUuid) {
+            if (data.msgType == "message") {
+              appendMsg(data.content, data.userId, 'new-message');
+            } else {
+              appendMsg(data.content, data.userId);
+            }
+          }
+        };
+        websocket.onclose = function(event) {
+          console.log(event);
+
+          if (event.wasClean) {
+            console.log(`[close] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+          } else {
+            // e.g. server process killed or network down
+            // event.code is usually 1006 in this case
+            console.log('[close] Connection died');
+          }
+
+          linked = false;
+          appendMsg("长链接已断开", "小助手", "info");
+        };
+      })
+      $('#stop-btn').on('click', function() {
+        if (!linked) {
+          appendMsg("已断开链接", "小助手", "info");
+
+          return;
+        }
+        linked = false;
+        websocket.close();
+      })
+      $('#send-btn').on('click', function() {
+        sendMsg();
+      })
+
+      document.onkeydown = function(e) {
+        if (e.keyCode == 13) {
+          if ($("#send-msg").is(":focus")) {
+            sendMsg();
+          }
+        }
+      }
+
+      function sendMsg() {
+        var text = $('#send-msg').val();
+
+        if (text.length == 0) {
+          text = "不能发送空字符串...";
+          appendMsg(text, "小助手", "warn");
+
+          return;
+        }
+        if (!linked) {
+          text = "链接处于断开状态，请先建立链接...";
+          appendMsg(text, "小助手", "warn");
+
+          return;
+        }
+        appendMsg(text, curUuid);
+        $('#send-msg').val('');
+
+        websocket.send(buildJSONMsg(text));
+      }
+
+      function buildJSONMsg(text) {
+        return JSON.stringify(
+          {
+            msgType: "message",
+            content: text,
+            channelId: roomId,
+            userId: curUuid,
+            date: Date.now(),
+          }
+        )
+      }
+    </script>
+  </body>
+</html>
